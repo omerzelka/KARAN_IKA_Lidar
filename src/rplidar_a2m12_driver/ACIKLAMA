@@ -1,4 +1,4 @@
-#Jetson'a aktarım için en pratik yol ağ üzerinden scp. Adım adım:
+#Jetson'a aktarım için en pratik yol AĞ ÜZERİNDEN scp. Adım adım:
 
 #1. Jetson'ın IP adresini öğrenin (Jetson terminalinde)
 
