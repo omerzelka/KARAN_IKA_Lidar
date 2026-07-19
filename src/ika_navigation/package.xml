@@ -1,13 +1,13 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>rplidar_a2m12_driver</name>
+  <name>ika_navigation</name>
   <version>1.0.0</version>
   <description>
-    RPLIDAR A2M12 için SDK'sız, sıfırdan yazılmış POSIX (termios2) tabanlı
-    ROS 2 Humble sürücüsü. Slamtec seri protokolünü alt seviyede ayrıştırır,
-    DTR üzerinden motoru kontrol eder ve sensor_msgs/msg/LaserScan olarak
-    /scan topic'ine yayınlar.
+    İKA (İnsansız Kara Aracı) için otonom navigasyon paketi. RPLIDAR /scan
+    verisini kullanarak üç algoritmayı birleştirir: Stanley Controller
+    (yol takibi), VFH+ (engelden kaçınma) ve Kalman Filtresi (engel takibi /
+    durum kestirimi). geometry_msgs/Twist olarak /cmd_vel'e yayınlar.
   </description>
   <maintainer email="promerz10@gmail.com">Omer-Metehan</maintainer>
   <license>MIT</license>
@@ -16,8 +16,13 @@
 
   <depend>rclcpp</depend>
   <depend>sensor_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>visualization_msgs</depend>
 
   <exec_depend>ros2launch</exec_depend>
+
+  <test_depend>ament_cmake_gtest</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
