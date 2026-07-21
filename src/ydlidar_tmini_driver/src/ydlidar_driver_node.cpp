@@ -376,8 +376,12 @@ void YdlidarDriverNode::publishScan()
   msg->intensities.assign(num_bins_, 0.0f);
 
   for (const auto & pt : scan_buffer_) {
-    if (pt.distance_m <= 1e-4f) {
-      continue;  // 0 => geçersiz ölçüm (yansıma alınamadı)
+    // Menzil dışı VE geçersiz (0'a yakın) ölçümleri ele: bu yönler +inf kalır.
+    // range_min çok yakın çöp okumaları (lidarın kendi gövdesi, 0.05m altı
+    // parazit), range_max ise menzil üstü/yansımasız (>12m) okumaları eler.
+    if (pt.distance_m < static_cast<float>(range_min_) ||
+        pt.distance_m > static_cast<float>(range_max_)) {
+      continue;
     }
     if (pt.angle_deg < 0.0f || pt.angle_deg >= 360.0f) {
       continue;

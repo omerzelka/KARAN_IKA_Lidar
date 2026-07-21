@@ -14,7 +14,8 @@ def generate_launch_description():
                 'serial_port': '/dev/ttyUSB0',
                 'baud_rate': 230400,        # T-mini Plus varsayılanı
                 'frame_id': 'laser_link',
-                'range_min': 0.02,          # metre (T-mini Plus min menzil)
+                'range_min': 0.05,          # metre; çok yakın parazit okumaları ele
+                                            # (0.05 yetmezse 0.10'a çıkar)
                 'range_max': 12.0,          # metre (T-mini Plus nominal menzil)
                 'num_bins': 360,            # 1 derece açısal çözünürlük
                 # --- Donanımda doğrulanması gereken sabitler (bkz. ACIKLAMA) ---
