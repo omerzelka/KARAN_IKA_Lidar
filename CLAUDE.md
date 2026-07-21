@@ -87,11 +87,19 @@ Lidar verisini uzaktaki bilgisayara taşımanın 3 yolu (`scripts/` altında):
 3. **Seri → STM32 → PC @ 57600 (telemetri/gömülü hat):**
    `scan_serial_bridge.py` (Jetson) → **STM32F4 relay** (`firmware/`) → 57600
    UART → `scan_serial_receiver.py` (PC).
-   - String format (NMEA benzeri, checksum'lı):
-     `$L,<seq>,<N>,<mm0>,...*<XOR>` (lidar) ve `$P,<x_mm>,<y_mm>,<yaw_cdeg>*<XOR>` (poz).
-   - **57600 darboğazı: ≈5760 byte/s.** Bridge 360° → `num_points` (varsayılan
-     180 = 2°) sektöre seyreltir. Veri düşerse `num_points`↓ ya da
-     `publish_every`↑. Tam çözünürlük 6 Hz bu hatta SIĞMAZ.
+   - **Binary çerçeve** (little-endian, satır değil sync+len+CRC ile çerçevelenir):
+     `[0xAA 0x55][type:u8][len:u16][payload][crc:u16]`. `crc` = type+len+payload
+     üstünde **CRC-16/CCITT-FALSE**. `type 'L'(0x4C)`: `seq:u16 + N:u16 + N×u16`
+     (mesafe **mm**, 0 = geçersiz). `type 'P'(0x50)`: `x_mm:i32 + y_mm:i32 +
+     yaw_cdeg:i32` (santiderece = derece·100). Bridge ↔ receiver `crc16_ccitt`'i
+     aynı olmalı.
+   - **57600 bütçesi: ≈5760 byte/s.** Bridge 360° → `num_points` (varsayılan
+     180 = 2°) sektöre seyreltir; her sektörde en yakın geçerli mesafe tutulur.
+     Binary N=180 @ 6 Hz ≈ **~2.3 KB/s (%41)** — tam çözünürlük artık sığar
+     (eski ASCII format %80 idi). Yine de düşerse `num_points`↓ ya da
+     `publish_every`↑.
+   - Not: STM32 relay **byte-transparan** (halka tampon, içeriği yorumlamaz);
+     binary baytlar (`$`, `\r`, `\n` dahil) sorunsuz geçer.
 
 `scripts/scan_check.py`: GUI'siz canlı doğrulama (en yakın engel + açı yazar).
 Tüm Python abone araçları Best-Effort QoS kullanır. Bağımlılık: `pyserial`

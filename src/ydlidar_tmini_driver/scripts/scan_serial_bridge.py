@@ -2,21 +2,27 @@
 # ============================================================================
 # scan_serial_bridge.py  —  JETSON'da çalışır
 #
-# /scan (LaserScan) -> KOMPAKT string -> seri port (STM32'ye) @ 57600.
+# /scan (LaserScan) -> KOMPAKT BİNARY çerçeve -> seri port (STM32'ye) @ 57600.
 # STM32 bu baytları olduğu gibi PC'ye aktarır (dumb relay), PC haritalar.
 #
-# CÜMLE FORMATI (NMEA benzeri, string, checksum'lı):
-#   $L,<seq>,<N>,<mm0>,<mm1>,...,<mm_{N-1}>*<XOR>\r\n
-#       seq  : 0-65535 artan sayaç (tur kaybı tespiti için)
-#       N    : nokta sayısı (seyreltilmiş)
-#       mm_i : i. sektörün mesafesi, MİLİMETRE tamsayı; 0 = geçersiz/menzil dışı
-#       XOR  : '$' ile '*' arasındaki karakterlerin XOR'u (NMEA usulü)
-#   $P,<x_mm>,<y_mm>,<yaw_cdeg>*<XOR>\r\n   (opsiyonel, odom varsa; haritalama için)
-#       yaw_cdeg = yaw derece * 100 (santiderece), tamsayı
+# BİNARY ÇERÇEVE (little-endian):
+#   [0xAA 0x55] [type:u8] [len:u16] [payload:len bayt] [crc:u16]
+#     sync word                                          CRC-16/CCITT-FALSE
+#     type : 'L'(0x4C)=lidar, 'P'(0x50)=poz
+#     len  : payload uzunluğu (bayt)
+#     crc  : type + len + payload üstünde (init=0xFFFF, poly=0x1021)
+#   L payload: seq(u16) + N(u16) + N × u16   (mesafe mm, 0 = geçersiz/menzil dışı)
+#   P payload: x_mm(i32) + y_mm(i32) + yaw_cdeg(i32)   (santiderece = derece*100)
 #
-# !!! 57600 BAUD DARBOĞAZI !!!
-#   57600 8N1 ≈ 5760 byte/s. N=180 @ 6 Hz ≈ ~5 KB/s -> sığar (dar marj).
-#   PC/STM32'de veri düşerse: num_points'i (N) düşür ya da publish_every'yi artır.
+#   NEDEN BİNARY? Eski ASCII format ~767 B/tur (57600 hattının %80'i, dar marj).
+#   Binary u16 ~360 B/tur (%38) — mesafeyi 5 haneli metin yerine 2 bayta koyar,
+#   bilgi kaybı yok, N=180 @ 6 Hz artık rahat sığar. Baytlar '$','\r','\n'
+#   içerebildiği için satır çerçevelemesi yerine sync+len+CRC kullanılır; STM32
+#   relay byte-transparan olduğundan sorun olmaz.
+#
+# !!! 57600 BAUD BÜTÇESİ !!!
+#   57600 8N1 ≈ 5760 byte/s. Binary N=180 @ 6 Hz ≈ 2160 B/s -> bol pay.
+#   Yine de düşerse: num_points (N) düşür ya da publish_every artır.
 #
 # Bağımlılık:  pip3 install pyserial
 # Çalıştırma:
@@ -26,6 +32,7 @@
 # ============================================================================
 
 import math
+import struct
 
 import rclpy
 from rclpy.node import Node
@@ -43,13 +50,25 @@ try:
 except ImportError:
     HAVE_ODOM = False
 
+SYNC = b'\xAA\x55'
+TYPE_L = 0x4C  # ord('L')
+TYPE_P = 0x50  # ord('P')
 
-def nmea_checksum(payload: str) -> int:
-    """'$' ile '*' arasındaki gövdenin XOR checksum'ı."""
-    c = 0
-    for ch in payload:
-        c ^= ord(ch)
-    return c
+
+def crc16_ccitt(data: bytes) -> int:
+    """CRC-16/CCITT-FALSE (init=0xFFFF, poly=0x1021, yansıtma yok)."""
+    crc = 0xFFFF
+    for b in data:
+        crc ^= b << 8
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x1021) & 0xFFFF if (crc & 0x8000) else (crc << 1) & 0xFFFF
+    return crc
+
+
+def build_frame(type_byte: int, payload: bytes) -> bytes:
+    """[AA 55][type][len:u16][payload][crc:u16] çerçevesini üretir."""
+    body = struct.pack('<BH', type_byte, len(payload)) + payload
+    return SYNC + body + struct.pack('<H', crc16_ccitt(body))
 
 
 class ScanSerialBridge(Node):
@@ -77,8 +96,8 @@ class ScanSerialBridge(Node):
             self.get_logger().info(f"Odometri: {self.odom_topic}")
 
         self.get_logger().info(
-            f"Seri köprü açık: {self.port_name} @ {self.baud}, N={self.num_points}, "
-            f"her {self.publish_every}. tur")
+            f"Seri köprü açık (binary): {self.port_name} @ {self.baud}, "
+            f"N={self.num_points}, her {self.publish_every}. tur")
 
     def on_odom(self, msg):
         p = msg.pose.pose
@@ -99,16 +118,16 @@ class ScanSerialBridge(Node):
                 ang = (a - m.angle_min) % two_pi
                 k = int(ang / two_pi * n) % n
                 mm = int(round(r * 1000.0))
-                if out[k] == 0 or mm < out[k]:   # en yakın (min) tut
+                if mm > 65535:
+                    mm = 65535                    # u16 taşmasına karşı kırp
+                if out[k] == 0 or mm < out[k]:    # en yakın (min) tut
                     out[k] = mm
             a += m.angle_increment
         return out
 
-    def _send(self, sentence_body: str):
-        cs = nmea_checksum(sentence_body)
-        line = f"${sentence_body}*{cs:02X}\r\n"
+    def _write(self, frame: bytes):
         try:
-            self.ser.write(line.encode('ascii'))
+            self.ser.write(frame)
         except serial.SerialException as e:
             self.get_logger().error(f"Seri yazma hatası: {e}")
 
@@ -117,17 +136,18 @@ class ScanSerialBridge(Node):
         if self.scan_count % self.publish_every != 0:
             return  # hız düşürme (57600'e sığdırmak için turların bir kısmını atla)
 
-        # Poz cümlesi (varsa) — haritalama için turları dünya çerçevesinde birleştirir
+        # Poz çerçevesi (varsa) — haritalama için turları dünya çerçevesinde birleştirir
         if self.pose is not None:
             x_mm  = int(round(self.pose[0] * 1000.0))
             y_mm  = int(round(self.pose[1] * 1000.0))
             yaw_c = int(round(math.degrees(self.pose[2]) * 100.0))
-            self._send(f"P,{x_mm},{y_mm},{yaw_c}")
+            self._write(build_frame(TYPE_P, struct.pack('<iii', x_mm, y_mm, yaw_c)))
 
-        # Lidar cümlesi
+        # Lidar çerçevesi
         dists = self._downsample(m)
-        body = f"L,{self.seq},{len(dists)}," + ",".join(str(d) for d in dists)
-        self._send(body)
+        payload = struct.pack('<HH', self.seq, len(dists)) + \
+            struct.pack(f'<{len(dists)}H', *dists)
+        self._write(build_frame(TYPE_L, payload))
         self.seq = (self.seq + 1) & 0xFFFF
 
 

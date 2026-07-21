@@ -1,7 +1,9 @@
 # STM32F4 UART Relay — Kurulum
 
-Jetson'dan gelen kompakt lidar string'ini PC'ye aktaran köprü firmware'i.
-`Lidar → Jetson → USART1(STM32) → USART2(STM32) → PC` zincirindeki STM32 halkası.
+Jetson'dan gelen kompakt lidar **binary çerçevelerini** PC'ye aktaran köprü
+firmware'i. `Lidar → Jetson → USART1(STM32) → USART2(STM32) → PC` zincirindeki
+STM32 halkası. Relay **byte-transparan**: baytları yorumlamadan aktarır, bu
+yüzden binary veri (`0xAA 0x55` sync, `\r`, `\n`, `$` dahil) sorunsuz geçer.
 
 ## Bağlantı (F401/F407 tipik pinler)
 
@@ -52,11 +54,14 @@ USB-TTL adaptörü mutlaka **3.3V** olsun (5V TX, STM32 RX'ini yakabilir).
 
 ## Doğrulama
 - Jetson'da `scan_serial_bridge.py` çalışırken, STM32 üzerinden PC'de
-  `scan_serial_receiver.py` `$L,...*XX` satırlarını görmeli.
+  `scan_serial_receiver.py` `tur seq=... nokta=...` satırlarını basmalı
+  (CRC'yi doğrulayıp binary çerçeveleri çözer).
 - Görmüyorsan: GND ortak mı, TX/RX çaprazlanmış mı (bir tarafın TX'i diğerinin
   RX'ine), baud iki tarafta da 57600 mü — sırayla kontrol et.
 
 ## Genişletme
-STM32 başka telemetri de gönderiyorsa (motor, IMU...), onları **farklı cümle
-kimlikleriyle** (`$M,...`, `$I,...`) aynı USART2'den yolla; PC alıcısı `$L`/`$P`
-dışını yok sayar. Böylece tek 57600 hattı paylaşılır.
+STM32 başka telemetri de gönderiyorsa (motor, IMU...), onları **aynı binary
+çerçeveyle farklı `type` baytı** kullanarak (örn. `'M'`, `'I'`) aynı USART2'den
+yolla. PC alıcısının `parse_buffer`'ı bilmediği `type`'ları CRC'si tuttuğu sürece
+güvenle atlar (`len` ile boyunu bilir), `L`/`P` dışını yok sayar. Böylece tek
+57600 hattı paylaşılır.
