@@ -52,7 +52,10 @@ class ScanJsonBridge(Node):
         # '' => odom kapalı. Haritalama için '/odom' ver.
         self.odom_topic       = str(self.declare_parameter('odom_topic', '').value)
 
-        self._clients = []
+        # DİKKAT: rclpy.Node'un kendi 'self._clients' özelliği var (ROS servis
+        # client listesi). Aynı ismi kullanırsak executor soketi ROS client
+        # sanıp çöker -> ayrı isim kullan.
+        self._conns = []
         self._lock = threading.Lock()
         self._pose = None  # en son {x, y, yaw}
 
@@ -82,7 +85,7 @@ class ScanJsonBridge(Node):
                 break
             conn.settimeout(2.0)  # yavaş istemci tüm akışı kilitlemesin
             with self._lock:
-                self._clients.append(conn)
+                self._conns.append(conn)
             self.get_logger().info(f"İstemci bağlandı: {addr[0]}:{addr[1]}")
 
     def on_odom(self, msg):
@@ -116,13 +119,13 @@ class ScanJsonBridge(Node):
     def _broadcast(self, data):
         dead = []
         with self._lock:
-            for c in self._clients:
+            for c in self._conns:
                 try:
                     c.sendall(data)
                 except OSError:
                     dead.append(c)
             for c in dead:
-                self._clients.remove(c)
+                self._conns.remove(c)
                 try:
                     c.close()
                 except OSError:
