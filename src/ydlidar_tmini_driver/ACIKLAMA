@@ -1,0 +1,88 @@
+============================================================================
+YDLIDAR T-mini Plus SÜRÜCÜSÜ — RPLIDAR A2M12 sürücüsünden uyarlama notları
+============================================================================
+
+Bu paket, rplidar_a2m12_driver ile AYNI mimaride yazıldı ama YDLIDAR seri
+protokolünü konuşur. ika_navigation aynı /scan (sensor_msgs/LaserScan)
+arayüzünü tükettiği için navigasyon paketinde HİÇBİR değişiklik gerekmez —
+sadece farklı bir sürücü launch edersin.
+
+----------------------------------------------------------------------------
+RPLIDAR vs YDLIDAR — protokol farkları (neyi değiştirdik)
+----------------------------------------------------------------------------
+                        RPLIDAR (Slamtec)        YDLIDAR (T-mini Plus)
+Baud                    256000                   230400
+Komut: SCAN             0xA5 0x20                0xA5 0x60
+Komut: STOP             0xA5 0x25                0xA5 0x65
+Komut: GET_HEALTH       0xA5 0x52                0xA5 0x91
+Komut: RESET            0xA5 0x40                0xA5 0x80
+Cevap descriptor        0xA5 0x5A + 5 bayt tip   AYNI (0xA5 0x5A ...)
+Ölçüm formatı           nokta başına 5 bayt      ÇOK NOKTALI PAKET
+                                                 (0x55 0xAA başlık + N örnek)
+Açı                     her noktada ayrı byte    FSA/LSA arası interpolasyon
+Motor                   DTR ile (zorunlu)        SCAN komutuyla (DTR gereksiz)
+
+AYNI KALANLAR: serial_transport (termios2 katmanı), cevap descriptor parse
+mantığı, LaserScan üretimi (bin'leme + CW->CCW aynalama), okuyucu-thread
+mimarisi, yeniden bağlanma / resync yaklaşımı.
+
+----------------------------------------------------------------------------
+!!! DONANIMDA İLK ÇALIŞTIRMADA DOĞRULANMASI GEREKEN PARAMETRELER !!!
+----------------------------------------------------------------------------
+Sürücü, YDLIDAR standart protokolüne göre yazıldı. T-mini Plus çıktısı
+beklenenden farklıysa aşağıdaki parametreleri launch dosyasından ayarla.
+Tanı için: sürücü çalışırken `ros2 topic echo /scan --once` ve
+`ros2 topic hz /scan` (~6-12 Hz beklenir) bak.
+
+1. sample_bytes (varsayılan 2)
+   - /scan hiç gelmiyor ya da "Bozuk paket" uyarısı akıyorsa: örnek başına
+     bayt sayısı yanlış olabilir. 3 dene (yoğunluklu/intensity varyant).
+
+2. distance_scale_mm (varsayılan 0.25 = ham/4)
+   - Mesafeler gerçeğin 4 katı/çeyreği çıkıyorsa bu ölçeği düzelt
+     (ör. mesafe-direkt-mm ise 1.0).
+
+3. angle_correction (varsayılan False)
+   - T-mini Plus ToF'tur, üçgenleme düzeltmesi GEREKMEZ. Nokta bulutu açısal
+     olarak hafif kayıksa dokunma; yalnızca üçgenlemeli modelde True yap.
+
+4. verify_checksum (varsayılan False)
+   - Paket sağlaması (CS). Donanımda doğru çalıştığını gördükten sonra True
+     yaparsan bozuk paketler otomatik atılır. Yanlışlıkla tüm paketler
+     düşerse formül modelinle uyuşmuyordur -> False bırak.
+
+5. invert_angle (varsayılan True)
+   - Sol/sağ ters görünüyorsa (ayna etkisi) False yap.
+
+6. use_dtr_motor (varsayılan False)
+   - Motor hiç dönmüyorsa (SCAN'e rağmen) adaptör kartın DTR ile motor
+     kontrolü yapıyor olabilir; True dene.
+
+7. health_check (varsayılan True)
+   - Log'da sürekli "GET_HEALTH cevabı alınamadı" görüp bağlantı bir türlü
+     kurulamıyorsa (bazı firmware 0x91'i desteklemez): False yap. Bu, sağlık
+     sorgusunu atlar ve doğrudan SCAN'e geçer.
+
+----------------------------------------------------------------------------
+DERLEME ve ÇALIŞTIRMA (Jetson / Ubuntu 22.04 + ROS 2 Humble)
+----------------------------------------------------------------------------
+    # Seri port izni (tek seferlik, sonra oturumu kapat-aç)
+    sudo usermod -aG dialout $USER
+
+    cd ~/KARAN_IKA_Lidar
+    colcon build --packages-select ydlidar_tmini_driver
+    source install/setup.bash
+
+    # 1. terminal: lidar
+    ros2 launch ydlidar_tmini_driver ydlidar.launch.py
+    # 2. terminal: navigasyon (DEĞİŞMEDİ)
+    ros2 launch ika_navigation ika_navigation.launch.py
+
+    # Doğrulama
+    ls /dev/ttyUSB*         # lidar takılıyken /dev/ttyUSB0 görünmeli
+    ros2 topic hz /scan     # ~6-12 Hz beklenir
+    ros2 topic echo /scan --once
+
+Not (CRLF): Dosyalar Windows'ta oluştu. Launch/py hatası alırsan Jetson'da:
+    sudo apt install dos2unix
+    find ~/KARAN_IKA_Lidar/src/ydlidar_tmini_driver -type f | xargs dos2unix

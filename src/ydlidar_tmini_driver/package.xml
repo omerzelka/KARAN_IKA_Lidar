@@ -1,13 +1,14 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>rplidar_a2m12_driver</name>
+  <name>ydlidar_tmini_driver</name>
   <version>1.0.0</version>
   <description>
-    RPLIDAR A2M12 için SDK'sız, sıfırdan yazılmış POSIX (termios2) tabanlı
-    ROS 2 Humble sürücüsü. Slamtec seri protokolünü alt seviyede ayrıştırır,
-    DTR üzerinden motoru kontrol eder ve sensor_msgs/msg/LaserScan olarak
-    /scan topic'ine yayınlar.
+    YDLIDAR T-mini Plus için SDK'sız, sıfırdan yazılmış POSIX (termios2) tabanlı
+    ROS 2 Humble sürücüsü. YDLIDAR seri protokolünü (0x55 0xAA paket başlığı,
+    FSA/LSA açı interpolasyonu) alt seviyede ayrıştırır ve
+    sensor_msgs/msg/LaserScan olarak /scan topic'ine yayınlar.
+    ika_navigation ile aynı /scan arayüzünü kullanır (drop-in RPLIDAR yerine).
   </description>
   <maintainer email="promerz10@gmail.com">Omer-Metehan</maintainer>
   <license>MIT</license>

@@ -1,6 +1,6 @@
 # İKA navigasyon düğümünü (Stanley + VFH+ + Kalman) parametreleriyle başlatır.
 # Not: Lidar sürücüsü ayrıca çalışıyor olmalı:
-#   ros2 launch rplidar_a2m12_driver rplidar.launch.py
+#   ros2 launch ydlidar_tmini_driver ydlidar.launch.py
 from launch import LaunchDescription
 from launch_ros.actions import Node
 
