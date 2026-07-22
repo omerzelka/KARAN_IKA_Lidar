@@ -12,24 +12,42 @@
 #     type 'P'(0x50): x_mm(i32) + y_mm(i32) + yaw_cdeg(i32)
 #     crc : type+len+payload üstünde CRC-16/CCITT-FALSE
 #
-# Bağımlılık:  pip install pyserial
+# Haritalama: gelen her tur log-odds occupancy grid'e işlenir (sensörden her
+# noktaya ışın izlenir; yol boyu hücreler BOŞ, uç nokta DOLU) ve matplotlib ile
+# canlı çizilir. Poz ('P') geliyorsa turlar dünya (odom) çerçevesinde birikir.
+#
+# Bağımlılık:  pip install pyserial numpy matplotlib
 # Çalıştırma:
 #   Windows:  python scan_serial_receiver.py COM5
 #   Linux:    python3 scan_serial_receiver.py /dev/ttyUSB0
+#   Harita kapalı (sadece log):  python scan_serial_receiver.py COM5 57600 --nomap
 # ============================================================================
 
 import math
 import struct
 import sys
+import time
 
 try:
     import serial  # pyserial
 except ImportError:
     raise SystemExit("pyserial gerekli: pip install pyserial")
 
-PORT = sys.argv[1] if len(sys.argv) > 1 else ('COM5' if sys.platform == 'win32'
-                                              else '/dev/ttyUSB0')
-BAUD = int(sys.argv[2]) if len(sys.argv) > 2 else 57600
+_args = [a for a in sys.argv[1:] if not a.startswith('--')]
+_flags = [a for a in sys.argv[1:] if a.startswith('--')]
+
+PORT = _args[0] if len(_args) > 0 else ('COM5' if sys.platform == 'win32'
+                                        else '/dev/ttyUSB0')
+BAUD = int(_args[1]) if len(_args) > 1 else 57600
+MAP_ENABLED = '--nomap' not in _flags
+
+# --- Harita parametreleri (gerekirse burayı ayarla) ------------------------
+GRID_RES_M    = 0.05    # hücre boyutu (m) — 5 cm
+GRID_HALF_M   = 15.0    # harita yarı-genişliği (m) -> 30x30 m alan
+L_OCC         = 0.85    # dolu ölçüm için log-odds artışı
+L_FREE        = 0.40    # boş (ışın yolu) için log-odds azalışı
+L_CLAMP       = 6.0     # log-odds doygunluk sınırı (±)
+REDRAW_PERIOD = 0.25    # ekran yenileme aralığı (s) — okuma döngüsünü yormasın
 
 SYNC0, SYNC1 = 0xAA, 0x55
 TYPE_L = 0x4C
@@ -47,6 +65,68 @@ def crc16_ccitt(data: bytes) -> int:
 
 
 _last_pose = {'x': 0.0, 'y': 0.0, 'yaw': 0.0}
+
+
+# ===========================================================================
+# Occupancy grid (log-odds) — sensörden ışın izleyerek boş/dolu hücre günceller
+# ===========================================================================
+class OccupancyGrid:
+    def __init__(self, res=GRID_RES_M, half=GRID_HALF_M):
+        import numpy as np
+        self.np = np
+        self.res = res
+        self.half = half
+        self.n = int(round(2 * half / res))          # kenar başına hücre sayısı
+        self.log = np.zeros((self.n, self.n), dtype=np.float32)  # log-odds
+
+    def w2c(self, x, y):
+        """Dünya (m) -> hücre (col, row). Sınır dışıysa None döner."""
+        cx = int((x + self.half) / self.res)
+        cy = int((y + self.half) / self.res)
+        if 0 <= cx < self.n and 0 <= cy < self.n:
+            return cx, cy
+        return None
+
+    def _ray_cells(self, x0, y0, x1, y1):
+        """(x0,y0)->(x1,y1) hücreleri arası Bresenham; uç HARİÇ hücreleri verir."""
+        dx = abs(x1 - x0); dy = abs(y1 - y0)
+        sx = 1 if x0 < x1 else -1
+        sy = 1 if y0 < y1 else -1
+        err = dx - dy
+        cells = []
+        while not (x0 == x1 and y0 == y1):
+            cells.append((x0, y0))
+            e2 = 2 * err
+            if e2 > -dy:
+                err -= dy; x0 += sx
+            if e2 < dx:
+                err += dx; y0 += sy
+        return cells  # uç noktayı (dolu) içermez
+
+    def integrate(self, ox, oy, points):
+        """ox,oy = sensör orijini (m, dünya); points = [(x,y)] uç noktalar (m)."""
+        np = self.np
+        oc = self.w2c(ox, oy)
+        if oc is None:
+            return
+        for (px, py) in points:
+            ec = self.w2c(px, py)
+            if ec is None:
+                continue
+            # ışın yolu: boş hücreler (log-odds azalt)
+            for (cx, cy) in self._ray_cells(oc[0], oc[1], ec[0], ec[1]):
+                self.log[cy, cx] = max(-L_CLAMP, self.log[cy, cx] - L_FREE)
+            # uç nokta: dolu (log-odds artır)
+            self.log[ec[1], ec[0]] = min(L_CLAMP, self.log[ec[1], ec[0]] + L_OCC)
+
+    def prob_image(self):
+        """Görselleştirme için olasılık [0..1] görüntüsü (bilinmeyen=0.5)."""
+        return 1.0 / (1.0 + self.np.exp(-self.log))
+
+
+_grid = None      # OccupancyGrid örneği (main'de kurulur)
+_viz = None       # matplotlib durum sözlüğü
+_last_draw = 0.0  # son yenileme zamanı
 
 
 def handle_L(payload: bytes):
@@ -83,9 +163,56 @@ def handle_P(payload: bytes):
 
 
 def handle_scan(seq, pts):
-    """>>> HARİTALAMA KODUNU BURAYA BAĞLA <<<  pts = [(x, y), ...] metre."""
+    """Bir tur geldi: occupancy grid'i güncelle + canlı çizimi yenile.
+    pts = [(x, y), ...] metre (poz varsa dünya çerçevesinde)."""
     print(f"tur seq={seq:5d}  nokta={len(pts):4d}  poz=({_last_pose['x']:.2f},"
           f"{_last_pose['y']:.2f},{math.degrees(_last_pose['yaw']):.0f}°)")
+
+    if _grid is None:
+        return  # harita kapalı (--nomap) -> sadece log
+
+    # Sensör orijini = en son poz (yoksa 0,0). Işınlar buradan çizilir.
+    _grid.integrate(_last_pose['x'], _last_pose['y'], pts)
+
+    global _last_draw
+    now = time.monotonic()
+    if now - _last_draw >= REDRAW_PERIOD:
+        _last_draw = now
+        _redraw()
+
+
+def _init_viz():
+    """matplotlib penceresini kurar; başarısızsa None döner (harita devre dışı)."""
+    try:
+        import numpy  # noqa: F401  (grid için de gerekli)
+        import matplotlib
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("[uyarı] numpy/matplotlib yok -> harita kapalı "
+              "(pip install numpy matplotlib). Sadece log basılacak.")
+        return None
+
+    plt.ion()
+    fig, ax = plt.subplots(figsize=(7, 7))
+    extent = [-GRID_HALF_M, GRID_HALF_M, -GRID_HALF_M, GRID_HALF_M]
+    # gray_r: olasılık yüksek (dolu) -> koyu, düşük (boş) -> açık, 0.5 -> gri
+    im = ax.imshow(_grid.prob_image(), cmap='gray_r', origin='lower',
+                   extent=extent, vmin=0.0, vmax=1.0, interpolation='nearest')
+    robot, = ax.plot([0], [0], 'r^', markersize=9, label='araç')
+    ax.set_title('Canlı Occupancy Grid  (koyu=engel, açık=boş)')
+    ax.set_xlabel('x [m]'); ax.set_ylabel('y [m]')
+    ax.set_aspect('equal'); ax.legend(loc='upper right')
+    fig.tight_layout()
+    return {'plt': plt, 'fig': fig, 'ax': ax, 'im': im, 'robot': robot}
+
+
+def _redraw():
+    if _viz is None:
+        return
+    _viz['im'].set_data(_grid.prob_image())
+    _viz['robot'].set_data([_last_pose['x']], [_last_pose['y']])
+    _viz['fig'].canvas.draw_idle()
+    _viz['plt'].pause(0.001)   # GUI olaylarını işle (pencere donmasın)
 
 
 def parse_buffer(buf: bytearray):
@@ -119,6 +246,19 @@ def parse_buffer(buf: bytearray):
 
 
 def main():
+    global _grid, _viz
+
+    # Harita altyapısını kur (numpy/matplotlib yoksa nazikçe kapanır)
+    if MAP_ENABLED:
+        try:
+            _grid = OccupancyGrid()
+            _viz = _init_viz()
+            if _viz is None:
+                _grid = None      # matplotlib yoksa grid'i de bırak
+        except ImportError:
+            print("[uyarı] numpy yok -> harita kapalı (pip install numpy matplotlib).")
+            _grid = None
+
     print(f"Seri açılıyor: {PORT} @ {BAUD} ...")
     try:
         ser = serial.Serial(PORT, BAUD, timeout=1)
@@ -132,10 +272,16 @@ def main():
             if chunk:
                 buf.extend(chunk)
                 parse_buffer(buf)
+            elif _viz is not None:
+                _viz['plt'].pause(0.001)  # veri yokken de pencereyi canlı tut
     except KeyboardInterrupt:
         pass
     finally:
         ser.close()
+        if _viz is not None:
+            print("Harita penceresi açık kalsın diye bekleniyor (kapatınca çıkar)...")
+            _viz['plt'].ioff()
+            _viz['plt'].show()
 
 
 if __name__ == '__main__':

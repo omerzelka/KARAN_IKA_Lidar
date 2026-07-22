@@ -101,9 +101,15 @@ Lidar verisini uzaktaki bilgisayara taşımanın 3 yolu (`scripts/` altında):
    - Not: STM32 relay **byte-transparan** (halka tampon, içeriği yorumlamaz);
      binary baytlar (`$`, `\r`, `\n` dahil) sorunsuz geçer.
 
+`scan_serial_receiver.py` artık gelen turları **log-odds occupancy grid**'e
+işleyip (sensörden ışın izleme: yol=boş, uç=dolu) matplotlib ile **canlı** çizer;
+poz ('P') varsa turları dünya çerçevesinde birleştirir. Harita paramları dosya
+başında (`GRID_RES_M`, `GRID_HALF_M`, `L_OCC/L_FREE/L_CLAMP`). `--nomap` ile
+haritasız sadece log.
+
 `scripts/scan_check.py`: GUI'siz canlı doğrulama (en yakın engel + açı yazar).
 Tüm Python abone araçları Best-Effort QoS kullanır. Bağımlılık: `pyserial`
-(seri araçlar için).
+(seri araçlar); `numpy`+`matplotlib` (`scan_serial_receiver.py` canlı haritası).
 
 ## Konvansiyonlar & tuzaklar
 
