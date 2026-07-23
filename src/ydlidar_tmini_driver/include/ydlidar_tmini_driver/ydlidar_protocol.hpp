@@ -168,6 +168,8 @@ inline ParseResult parsePacket(const uint8_t * buf, size_t len,
 
   // Sağlama: paketteki tüm 16-bit kelimelerin XOR'u CS'e eşit olmalı.
   // (XOR değişmeli olduğu için sıralama önemsizdir; CS'in kendisi hariç.)
+  // 3B (intensity'li) örnekte CİHAZ, intensity baytını AYRI bir 16-bit kelime
+  // olarak XOR'a katar (lidar_probe.py ile T-mini Plus'ta %100 doğrulandı).
   if (verify_checksum) {
     uint16_t chk = 0;
     chk ^= static_cast<uint16_t>(PH_BYTE1 | (PH_BYTE2 << 8));  // PH = 0xAA55
@@ -176,9 +178,12 @@ inline ParseResult parsePacket(const uint8_t * buf, size_t len,
     chk ^= lsa;
     for (uint8_t i = 0; i < lsn; ++i) {
       const size_t o = PACKET_HEADER_SIZE + static_cast<size_t>(i) * sample_bytes;
-      // Mesafe kelimesi örneğin son 2 baytındadır (2B: [0..1], 3B: [1..2])
-      const size_t d = (sample_bytes == 3) ? o + 1 : o;
-      chk ^= static_cast<uint16_t>(buf[d] | (buf[d + 1] << 8));
+      if (sample_bytes == 3) {
+        chk ^= static_cast<uint16_t>(buf[o]);                       // intensity
+        chk ^= static_cast<uint16_t>(buf[o + 1] | (buf[o + 2] << 8));  // mesafe
+      } else {
+        chk ^= static_cast<uint16_t>(buf[o] | (buf[o + 1] << 8));      // mesafe
+      }
     }
     if (chk != cs) {
       out_consumed = packet_len;  // paketi at ama akışı bu paket boyu kadar ilerlet

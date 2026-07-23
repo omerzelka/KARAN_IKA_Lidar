@@ -53,13 +53,15 @@ Seri: **230400 baud, 8N1**. `sensor_msgs/LaserScan` olarak `/scan`'e yayınlar.
 `0x91`(HEALTH); veri paketleri `0xAA 0x55` başlıklı, çok noktalı; açı FSA/LSA
 arası interpolasyon. Ayrıntı: `src/ydlidar_tmini_driver/ACIKLAMA`.
 
-**Doğrulanmış/kritik parametreler** (launch'ta):
+**Doğrulanmış/kritik parametreler** (launch'ta; `scripts/lidar_probe.py` ile
+ham akıştan ölçüldü — sürücüyü durdurup çalıştır, format/checksum'ı raporlar):
 
 | Parametre | Değer | Not |
 |-----------|-------|-----|
 | `baud_rate` | 230400 | T-mini Plus sabiti |
-| `distance_scale_mm` | 0.25 | ham/4 = mm — **donanımda doğrulandı** |
-| `sample_bytes` | 2 | mesafe-only; "Bozuk paket" akarsa 3 dene |
+| `distance_scale_mm` | 0.25 | ham/4 = mm — **probe ile doğrulandı** |
+| `sample_bytes` | 3 | intensity'li format — **probe: 385/385 paket 3B** |
+| `verify_checksum` | true | intensity baytı AYRI kelime olarak XOR'a girer (%100 eşleşme); 2B sanılıp checksum kapalıyken kayan baytlar merkez çevresinde sahte yakın nokta bulutu üretiyordu |
 | `range_min` / `range_max` | 0.05 / 12.0 | sürücü bu aralık dışını **eler** (+inf) |
 | `angle_correction` | false | ToF'ta kapalı |
 | `invert_angle` | true | CW(lidar) → CCW(REP-103) |

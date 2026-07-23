@@ -18,11 +18,13 @@ def generate_launch_description():
                                             # (0.05 yetmezse 0.10'a çıkar)
                 'range_max': 12.0,          # metre (T-mini Plus nominal menzil)
                 'num_bins': 360,            # 1 derece açısal çözünürlük
-                # --- Donanımda doğrulanması gereken sabitler (bkz. ACIKLAMA) ---
-                'sample_bytes': 2,          # 2 = mesafe-only; veri gelmezse 3 dene
-                'distance_scale_mm': 0.25,  # ham -> mm (standart = 1/4)
+                # --- Donanımda DOĞRULANDI (lidar_probe.py, bkz. ACIKLAMA) ---
+                'sample_bytes': 3,          # T-mini Plus intensity'li: 3 bayt/örnek
+                                            # (probe: 385/385 paket 3B ölçüldü)
+                'distance_scale_mm': 0.25,  # ham -> mm = 1/4 (probe ile doğrulandı)
                 'angle_correction': False,  # ToF: kapalı (üçgenlemeli modellerde True)
-                'verify_checksum': False,   # donanımda test edip True yapabilirsin
+                'verify_checksum': True,    # intensity-dahil XOR %100 eşleşti;
+                                            # bozuk paketler artık otomatik atılır
                 'invert_angle': True,       # CW(lidar) -> CCW(REP-103)
                 'use_dtr_motor': False,     # motor SCAN ile döner; gerekirse True
                 'health_check': True,
