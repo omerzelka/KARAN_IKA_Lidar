@@ -1,3 +1,10 @@
 # Auto detect text files and perform LF normalization
 * text=auto
 #notes.md
+
+# Jetson/Linux'ta çalışan dosyalar HER ZAMAN LF ile checkout edilsin —
+# CRLF shebang/launch hatalarini (dos2unix ihtiyacini) kökten çözer.
+*.sh text eol=lf
+*.py text eol=lf
+# Windows batch dosyalari CRLF ister
+*.bat text eol=crlf

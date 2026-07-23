@@ -18,7 +18,29 @@ Lidar (T-mini Plus) ──► Jetson (ROS 2) ──► STM32 relay ──► PC 
 | `firmware/stm32f4_uart_relay/` | STM32 UART köprüsü: Jetson→PC byte-transparan relay (Nucleo-F446RE'de doğrulandı) |
 | `scripts/` (sürücü içinde) | `/scan` tüketen PC/Jetson yardımcı araçları (aşağıda) |
 
-## Hızlı başlangıç (Jetson, ROS 2)
+## Hızlı başlangıç — script'lerle (önerilen)
+
+Yeni bir makinede üç komut yeter:
+
+```bash
+# JETSON (Ubuntu + ROS 2 kurulu olmalı)
+./setup.sh --nvgetty    # tek seferlik: apt paketleri + dialout + nvgetty kapat
+./build.sh              # derleme (git pull sonrası da bunu çalıştır)
+./start.sh              # lidar + STM32 köprüsü (Ctrl+C hepsini durdurur)
+```
+
+`./start.sh` modları: `lidar` | `bridge` | `nav` | `all` (varsayılan) | `all-nav`.
+Ayarlar ortam değişkeniyle: `ODOM_TOPIC=/odom BRIDGE_PORT=/dev/ttyTHS1 ./start.sh`
+
+```bat
+:: WINDOWS PC (harita/doğrulama)
+viewer.bat COM6
+```
+
+> Not: `.gitattributes` `*.sh`/`*.py` dosyalarını her zaman **LF** ile checkout
+> eder — Jetson'da artık `dos2unix` gerekmez.
+
+## Hızlı başlangıç — elle (Jetson, ROS 2)
 
 ```bash
 cd ~/lidar/KARAN_IKA_Lidar
