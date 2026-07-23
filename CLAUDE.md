@@ -18,6 +18,7 @@ KARAN_IKA_Lidar/                 # colcon workspace kökü (repo = workspace)
 │       └── launch/ika_navigation.launch.py
 ├── firmware/
 │   └── stm32f4_uart_relay/      # STM32F4 UART köprü firmware'i (Jetson->PC relay)
+├── README.md                    # genel tanıtım + hızlı başlangıç + sorun giderme
 └── CLAUDE.md
 ```
 
@@ -106,6 +107,28 @@ işleyip (sensörden ışın izleme: yol=boş, uç=dolu) matplotlib ile **canlı
 poz ('P') varsa turları dünya çerçevesinde birleştirir. Harita paramları dosya
 başında (`GRID_RES_M`, `GRID_HALF_M`, `L_OCC/L_FREE/L_CLAMP`). `--nomap` ile
 haritasız sadece log.
+
+**`scan_map_viewer.py` — doğrulama + haritalama uygulaması (PC, ROS'suz).**
+STM32 hattından gelen verinin doğruluğunu sınamak için asıl araç: birikimli
+occupancy grid + anlık tarama görünümü + canlı sağlık paneli (CRC hatası,
+kayıp tur = seq boşluğu, tur Hz, bant genişliği %, menzil dışı >12 m sayacı).
+"VERİ TEMİZ ✓" = tüm hata sayaçları sıfır. Klavye: c=temizle, s=PNG, q=çık.
+
+**Dönüşsüz sektör = boş-ışın (her iki haritalayıcıda):** bridge dönüş
+alamadığı sektörü (>12 m, cam/yutan yüzey) 0 yollar; 0'lar atlanırsa o
+doğrultular haritada SONSUZA DEK gri kalır. Bu yüzden d=0 ışını
+`FREE_RAY_M`/`NO_RETURN_FREE_M` (11.5 m) mesafeye kadar "boş" işlenir
+(uçta engel işaretlenmez); harita dışına taşan ışınlar sınıra kırpılıp
+içerideki kısmı boş işaretlenir. `--freeray=0` kapatır, `--freeray=8` kısaltır.
+**Örtülme kapısı:** d=0 iki zıt anlama gelir (çok uzak ↔ çok yakın/örtülü,
+örn. lidara el koymak: <range_min dönüşsüz). Ayrım: 0 sektörün ±2 komşusunda
+`NEAR_OCCLUSION_M`(1 m)'den yakın geçerli ölçüm varsa 'örtülü' sayılır ve
+boş-ışın İŞLENMEZ (bilinmeyen kalır) — yoksa elin arkasına sahte beyaz
+ışınlar çizilir. Panel 'dönüşsüz=X (örtülü=Y)' gösterir.
+Her iki alıcının parser'ında bozuk `len` koruması var (>4096 → resync;
+yoksa tek bozuk bayt parser'ı sonsuz bekletebilir). STM32 kartı sahada
+**Nucleo-F446RE**: USART2 zaten ST-Link VCP'ye bağlı → PC'ye ayrı USB-TTL
+gerekmez, alıcı STLink VCP COM portundan dinler.
 
 `scripts/scan_check.py`: GUI'siz canlı doğrulama (en yakın engel + açı yazar).
 Tüm Python abone araçları Best-Effort QoS kullanır. Bağımlılık: `pyserial`
