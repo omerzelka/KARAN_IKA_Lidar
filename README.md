@@ -94,4 +94,4 @@ bu panelden okuyabilirsin.
 
 ## Lisans & iletişim
 
-MIT — Maintainer: Omer-Metehan <promerz10@gmail.com>
+MIT — Maintainer: Omer-Metehan-Alperen <promerz10@gmail.com>
